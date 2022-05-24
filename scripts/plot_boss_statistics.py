@@ -143,6 +143,55 @@ def plot_multitask_sample_locations_with_bincounts(
         plt.ylabel(r'$x_i$ Sample location', fontsize=18)
         plt.show()
 
+
+# TODO : Add tolerancec, measure experiment durations for tolerance of 0.23
+def print_experiment_duration(experiment, folder, artificial_cost=None,
+                              tolerance=0.1):
+    """Prints a duration estimate of a given experiment.
+
+    Parameters
+    ----------
+    experiment : str
+        e.g. 'uhf_lf_2d_elcb_strategy1_run0'
+    folder : str
+        e.g. 'out', path of the output files.
+    """
+    parser = OutputFileParser(f'{experiment}', folder,
+                              artificial_cost=artificial_cost)
+    samples, sample_indices = parser.data['xy'], parser.data['sample_indices']
+    if parser.artificial_cost is not None:
+        acqcost = np.array(parser.artificial_cost).squeeze()
+    else:
+        acqcost = np.array(parser.data['acqcost']).squeeze()
+    gmp = parser.data['gmp']
+    predicted_minimum_x = gmp[:, 0:2]
+    total_num_samples = len(sample_indices)
+
+    # Plot bincounts after 20, 40, 60, 80, 100% of number of samples
+    bin_count_ranges = [int(quantile*total_num_samples)
+                        for quantile in [0.2, 0.4, 0.6, 0.8, 1.0]]
+    bin_counts = np.array([
+        np.bincount(sample_indices[:num_samples])
+        for num_samples in bin_count_ranges])
+    total_times = np.sum(bin_counts*acqcost, axis=1)
+    # 3600 for [s]->[h], minus 6.67 since this is the
+    # time of the initialization in hours
+    seconds_to_hours = 3600
+    init_cost = np.sum(
+        np.bincount(sample_indices[:4])*acqcost)/seconds_to_hours
+    print("times [h]", total_times/seconds_to_hours - init_cost)
+    df = ParserToDataFrame(parser, tolerance=tolerance)()
+    convergence_idx = df['convergence_idx'][0]
+    if convergence_idx is not None:
+        bin_counts_convergence = np.bincount(sample_indices[:convergence_idx])
+        # 3600 for [s]->[h], minus 6.67 since this is the
+        # time of the initialization in hours
+        print("time to reach convergence [h]:",
+              int(np.sum(bin_counts_convergence*acqcost)/seconds_to_hours
+                        - init_cost))
+    return parser
+
+
 def plot_timing_data(experiments, folder, labels, artificial_acq_times=False):
     fig = plt.figure(figsize=(9, 6))
     parsers = [OutputFileParser(f'{experiment}', folder) for experiment
@@ -335,7 +384,7 @@ def plot_cost_to_reach_convergence(plot_settings, folder):
         df['acqfn'] = df['acqfn'].str.replace(acqfn, acqfns_label[acqfn])
     if scale_y_axis:
         df[convergence_metric] = df[convergence_metric].apply(
-            lambda x: x/single_task_cost)
+            lambda x: (x-2*single_task_cost)/single_task_cost)
     fig, ax = plt.subplots(figsize=(18, 12))
     plot_df = df[['acqfn', 'strategy', convergence_metric]]
     single_task_plot_df = plot_df[plot_df['strategy'] == 'st']
@@ -383,9 +432,8 @@ def plot_cost_to_reach_convergence(plot_settings, folder):
         plot_df = df[['acqfn', 'strategy', convergence_metric]]
         not_converged_counter = {}
         for acqfn in [*acqfns_label.values()]:
-            for strategy in ['st', 'strategy1', 'strategy2', 'strategy3',
-                             'strategy4', 'strategy5', 'strategy6',
-                             'strategy10']:
+            for strategy in ['st'] + [
+                f'strategy{idx}' for idx in strategy_indices]:
                 sub_df = plot_df.loc[
                     plot_df.acqfn == acqfn].loc[plot_df.strategy == strategy]
                 not_converged_counter[
@@ -400,6 +448,7 @@ def plot_cost_to_reach_convergence(plot_settings, folder):
         print("setup | failed runs / total runs")
         for key in not_converged_counter:
             print(key + '  |  ' + str(not_converged_counter[key]) + ' / '+ str(runs))
+    return df
 
 
 def plot_regret(fidelities, acqfn, folder='out', range_bound=10, plot_filling=True,
