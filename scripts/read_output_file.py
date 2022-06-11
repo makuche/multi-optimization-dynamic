@@ -31,11 +31,14 @@ class OutputFileParser:
         gp_hyperparam = []
         iter_times = []
         total_time = []
+        boss_version = None
         with open(self.out_file_path, "r") as file:
             lines = file.readlines()
             self.data["header"] = lines[0:100]
             for i in range(len(lines)):
                 line = lines[i]
+                if "Version" in line:
+                    boss_version = parse_values(line, typecast=str)[0]
                 if "Data point added to dataset" in line:
                     line = lines[i + 1]
                     xy.append(parse_values(line, typecast=float, idx=0))
@@ -63,8 +66,7 @@ class OutputFileParser:
                     total_time.append(parse_values(line, typecast=float, idx=7)[0])
                 elif "Objective function evaluated" in line:
                     acq_times.append(parse_values(line, typecast=float, idx=6)[0])
-                elif "initpts" in line:
-                    # This doesn't work yet with the MT output file
+                elif ("initpts" in line) and ("iterpts" in line):
                     self.data["initpts"] = parse_values(line, cut_idx=-2)[0]
                     self.data["iterpts"] = parse_values(line, idx=3)
                 elif "inittype" in line:
@@ -89,7 +91,7 @@ class OutputFileParser:
                         tmp, typecast=str, sep=";", idx=0
                     )
                 elif "|| Bayesian optimization completed" in line:
-                    self.data["run_completed"] = [True]
+                    self.data["run_completed"] = True
 
         self.data["xy"] = np.array(xy)
         self.data["dim"] = len(xy[0]) - 1
@@ -100,6 +102,8 @@ class OutputFileParser:
         self.data["GP_hyperparam"] = gp_hyperparam
         self.data["iter_times"] = np.array(iter_times)
         self.data["total_time"] = np.array(total_time)
+        if "run_completed" not in self.data:
+            self.data["run_completed"] = False
 
         # Get sample indices from the rst file
         with open(self.rst_file_path, "r") as f:
@@ -117,7 +121,8 @@ class OutputFileParser:
                     start_reading_indices = True
                     continue
                 if start_reading_indices:
-                    self.data["sample_indices"].append(int(float(line.split()[2])))
+                    self.data["sample_indices"].append(
+                        int(float(line.split()[self.data["dim"]])))
 
     def calculate_cumulative_cost(self):
         costs = self.data["acqcost"] if self.artificial_cost is None \
