@@ -8,7 +8,7 @@ from pathlib import Path
 from read_output_file import OutputFileParser, ParserToDataFrame
 
 
-def get_discretized_dict(dictionary, rounding_function):
+def get_discretized_dict(original_dict, rounding_function):
     """
     This utility function returns a dictionary, where the keys
     of the original dictionary are 'discretized' and the values
@@ -22,14 +22,14 @@ def get_discretized_dict(dictionary, rounding_function):
                return int(np.ceil(number/multiple)*multiple)
     """
     ordered_dict, rounded_dict = OrderedDict(), defaultdict(list)
-    for key in sorted(dictionary.keys()):
-        ordered_dict[key] = dictionary[key]
-    rounded_keys = [rounding_function(key) for key in dictionary.keys()]
+    for key in sorted(original_dict.keys()):
+        ordered_dict[key] = original_dict[key]
+    rounded_keys = [rounding_function(key) for key in original_dict.keys()]
     cost_to_rounded_cost_map = {
-        key: val for key, val in zip(dictionary.keys(), rounded_keys)}
-    for key in dictionary.keys():
+        key: val for key, val in zip(original_dict.keys(), rounded_keys)}
+    for key in original_dict.keys():
         rounded_key = cost_to_rounded_cost_map[key]
-        rounded_dict[rounded_key] += dictionary[key]
+        rounded_dict[rounded_key] += original_dict[key]
     rounded_sorted_dict = OrderedDict()
     for key in sorted(rounded_dict.keys()):
         rounded_sorted_dict[key] = rounded_dict[key]
@@ -63,7 +63,8 @@ def plot_singletask_sample_locations(experiment, num_experiments, folder):
 
 
 def plot_multitask_sample_locations_with_bincounts(
-        experiment, folder, samples_over_iteration=False):
+        experiment, folder, samples_over_iteration=False,
+        true_min=-202861.3237):
     """Plot single-task sample locations in search space.
 
     Parameters
@@ -99,7 +100,7 @@ def plot_multitask_sample_locations_with_bincounts(
                 label='LF')
 
     # Plot vertical convergence line
-    df = ParserToDataFrame(parser)()
+    df = ParserToDataFrame(parser, true_min)()
     convergence_idx = df['convergence_idx'][0]
     if convergence_idx is not None:
         num_samples = len(df['sample_indices'][0])
@@ -146,7 +147,7 @@ def plot_multitask_sample_locations_with_bincounts(
 
 # TODO : Add tolerancec, measure experiment durations for tolerance of 0.23
 def print_experiment_duration(experiment, folder, artificial_cost=None,
-                              tolerance=0.1):
+                              tolerance=0.1, true_min=-202861.3237):
     """Prints a duration estimate of a given experiment.
 
     Parameters
@@ -180,7 +181,7 @@ def print_experiment_duration(experiment, folder, artificial_cost=None,
     init_cost = np.sum(
         np.bincount(sample_indices[:4])*acqcost)/seconds_to_hours
     print("times [h]", total_times/seconds_to_hours - init_cost)
-    df = ParserToDataFrame(parser, tolerance=tolerance)()
+    df = ParserToDataFrame(parser, tolerance=tolerance, true_min=true_min)()
     convergence_idx = df['convergence_idx'][0]
     if convergence_idx is not None:
         bin_counts_convergence = np.bincount(sample_indices[:convergence_idx])
@@ -346,6 +347,7 @@ def plot_cost_to_reach_convergence(plot_settings, folder):
     plot_mumbo = plot_settings['plot_mumbo']
     print_nonconverged_runs = plot_settings['print_nonconverged_runs']
     artificial_cost = plot_settings['artificial_cost']
+    true_min = plot_settings['true_min']
     legend_labels = plot_settings['legend_labels']
     plot_bounds = plot_settings['plot_bounds']
     best_tl_result = plot_settings['best_tl_result']
@@ -379,7 +381,7 @@ def plot_cost_to_reach_convergence(plot_settings, folder):
             f'{fidelities}_{dimension}d_mumbo_inseparable_run{idx}', folder)
             for idx in range(runs)]
 
-    df = ParserToDataFrame(parsers, tolerance=tolerance)()
+    df = ParserToDataFrame(parsers, tolerance=tolerance, true_min=true_min)()
     for acqfn in acqfns_label:
         df['acqfn'] = df['acqfn'].str.replace(acqfn, acqfns_label[acqfn])
     if scale_y_axis:
